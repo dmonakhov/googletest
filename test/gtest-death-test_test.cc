@@ -476,7 +476,8 @@ void SetPthreadFlag() {
 
 }  // namespace
 
-# if GTEST_HAS_CLONE && GTEST_HAS_PTHREAD
+//// TODO Cant find pthread_afork on android, disable test temporarily
+# if GTEST_HAS_CLONE && GTEST_HAS_PTHREAD && !GTEST_OS_LINUX_ANDROID
 
 TEST_F(TestForDeathTest, DoesNotExecuteAtforkHooks) {
   if (!testing::GTEST_FLAG(death_test_use_fork)) {

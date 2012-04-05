@@ -1,0 +1,635 @@
+#Patch agains 1.3.0..externa-android-gtest
+#git diff 1be2c9def7187e4e643c00a31dd9986395795d7d..HEAD
+
+diff --git a/CleanSpec.mk b/CleanSpec.mk
+new file mode 100644
+index 0000000..b84e1b6
+--- /dev/null
++++ b/CleanSpec.mk
+@@ -0,0 +1,49 @@
++# Copyright (C) 2007 The Android Open Source Project
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++
++# If you don't need to do a full clean build but would like to touch
++# a file or delete some intermediate files, add a clean step to the end
++# of the list.  These steps will only be run once, if they haven't been
++# run before.
++#
++# E.g.:
++#     $(call add-clean-step, touch -c external/sqlite/sqlite3.h)
++#     $(call add-clean-step, rm -rf $(PRODUCT_OUT)/obj/STATIC_LIBRARIES/libz_intermediates)
++#
++# Always use "touch -c" and "rm -f" or "rm -rf" to gracefully deal with
++# files that are missing or have been moved.
++#
++# Use $(PRODUCT_OUT) to get to the "out/target/product/blah/" directory.
++# Use $(OUT_DIR) to refer to the "out" directory.
++#
++# If you need to re-do something that's already mentioned, just copy
++# the command and add it to the bottom of the list.  E.g., if a change
++# that you made last week required touching a file and a change you
++# made today requires touching the same file, just copy the old
++# touch step and add it to the end of the list.
++#
++# ************************************************
++# NEWER CLEAN STEPS MUST BE AT THE END OF THE LIST
++# ************************************************
++
++# For example:
++#$(call add-clean-step, rm -rf $(OUT_DIR)/target/common/obj/APPS/AndroidTests_intermediates)
++#$(call add-clean-step, rm -rf $(OUT_DIR)/target/common/obj/JAVA_LIBRARIES/core_intermediates)
++#$(call add-clean-step, find $(OUT_DIR) -type f -name "IGTalkSession*" -print0 | xargs -0 rm -f)
++#$(call add-clean-step, rm -rf $(PRODUCT_OUT)/data/*)
++
++# ************************************************
++# NEWER CLEAN STEPS MUST BE AT THE END OF THE LIST
++# ************************************************
+diff --git a/include/gtest/internal/gtest-internal.h b/include/gtest/internal/gtest-internal.h
+index f61d502..87b3bd8 100644
+--- a/include/gtest/internal/gtest-internal.h
++++ b/include/gtest/internal/gtest-internal.h
+@@ -39,7 +39,7 @@
+ 
+ #include <gtest/internal/gtest-port.h>
+ 
+-#if GTEST_OS_LINUX
++#if GTEST_OS_LINUX || GTEST_OS_ANDROID
+ #include <stdlib.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+diff --git a/include/gtest/internal/gtest-port.h b/include/gtest/internal/gtest-port.h
+index 11798a1..37191a1 100644
+--- a/include/gtest/internal/gtest-port.h
++++ b/include/gtest/internal/gtest-port.h
+@@ -65,6 +65,7 @@
+ //
+ // Macros indicating the current platform (defined to 1 if compiled on
+ // the given platform; otherwise undefined):
++//   GTEST_OS_ANDROID  - Android
+ //   GTEST_OS_CYGWIN   - Cygwin
+ //   GTEST_OS_LINUX    - Linux
+ //   GTEST_OS_MAC      - Mac OS X
+@@ -177,6 +178,8 @@
+ #define GTEST_OS_WINDOWS 1
+ #elif defined __APPLE__
+ #define GTEST_OS_MAC 1
++#elif defined ANDROID
++#define GTEST_OS_ANDROID 1
+ #elif defined __linux__
+ #define GTEST_OS_LINUX 1
+ #elif defined __MVS__
+@@ -250,10 +253,11 @@
+ // TODO(wan@google.com): uses autoconf to detect whether ::std::wstring
+ //   is available.
+ 
+-#if GTEST_OS_CYGWIN || GTEST_OS_SOLARIS
++#if GTEST_OS_CYGWIN || GTEST_OS_SOLARIS || GTEST_OS_ANDROID
+ // Cygwin 1.5 and below doesn't support ::std::wstring.
+ // Cygwin 1.7 might add wstring support; this should be updated when clear.
+ // Solaris' libc++ doesn't support it either.
++// Android does not support wstring and never will.
+ #define GTEST_HAS_STD_WSTRING 0
+ #else
+ #define GTEST_HAS_STD_WSTRING GTEST_HAS_STD_STRING
+@@ -295,6 +299,10 @@
+ 
+ #elif defined(__GNUC__)
+ 
++// Android uses GCC but does not support RTTI
++#if GTEST_OS_ANDROID
++#define GTEST_HAS_RTTI 0
++#else
+ // Starting with version 4.3.2, gcc defines __GXX_RTTI iff RTTI is enabled.
+ #if GTEST_GCC_VER_ >= 40302
+ #ifdef __GXX_RTTI
+@@ -306,6 +314,7 @@
+ // For gcc versions smaller than 4.3.2, we assume RTTI is enabled.
+ #define GTEST_HAS_RTTI 1
+ #endif  // GTEST_GCC_VER >= 40302
++#endif  // GTEST_OS_ANDROID
+ 
+ #else
+ 
+@@ -331,7 +340,7 @@
+ // The user didn't tell us, so we need to figure it out.
+ 
+ // GCC provides <tr1/tuple> since 4.0.0.
+-#if defined(__GNUC__) && (GTEST_GCC_VER_ >= 40000)
++#if defined(__GNUC__) && (GTEST_GCC_VER_ >= 40000) && !GTEST_OS_ANDROID
+ #define GTEST_HAS_TR1_TUPLE 1
+ #else
+ #define GTEST_HAS_TR1_TUPLE 0
+@@ -396,10 +405,12 @@
+ 
+ // Typed tests need <typeinfo> and variadic macros, which gcc and VC
+ // 8.0+ support.
+-#if defined(__GNUC__) || (_MSC_VER >= 1400)
++// TODO: We should be able to support these on Android but we don't
++// have cxxabi.h when building for the target but we have it for the host.
++#if ( defined(__GNUC__) || (_MSC_VER >= 1400) ) && !defined(GTEST_OS_ANDROID)
+ #define GTEST_HAS_TYPED_TEST 1
+ #define GTEST_HAS_TYPED_TEST_P 1
+-#endif  // defined(__GNUC__) || (_MSC_VER >= 1400)
++#endif  // defined(__GNUC__) || (_MSC_VER >= 1400) && !defined(GTEST_OS_ANDROID)
+ 
+ // Determines whether to support Combine(). This only makes sense when
+ // value-parameterized tests are enabled.
+diff --git a/src/Android.mk b/src/Android.mk
+index cd98aa3..239e40e 100644
+--- a/src/Android.mk
++++ b/src/Android.mk
+@@ -14,37 +14,54 @@
+ #
+ #
+ 
+-ifeq ($(HOST_OS),linux)
++# Gtest builds 2 libraries: libgtest and libgtest_main. libgtest
++# contains most of the code (assertions...) and libgtest_main just
++# provide a common main to run the test (ie if you link against
++# libgtest_main you won't/should not provide a main() entry point.
++#
++# We build these 2 libraries for the target device and for the host if
++# it is running linux and using ASTL.
++#
++
++# TODO: The targets below have some redundancy. Check if we cannot
++# condense them using function(s) for the common code.
+ 
+ LOCAL_PATH := $(call my-dir)
+ 
++ifeq ($(BUILD_WITH_ASTL),true)
++libgtest_includes:= \
++    bionic/libstdc++/include \
++    external/astl/include \
++    $(LOCAL_PATH)/.. \
++    $(LOCAL_PATH)/../include
++else
++# BUILD_WITH_ASTL could be undefined, force it to false.
++BUILD_WITH_ASTL := false
++libgtest_includes := \
++    bionic \
++    external/stlport/stlport \
++    $(LOCAL_PATH)/.. \
++    $(LOCAL_PATH)/../include
++endif
++
++# Gtest depends on STLPort which does not build on host/simulator.
++ifeq ($(HOST_OS)-$(BUILD_WITH_ASTL),linux-true)
++
+ #######################################################################
+ # gtest lib host
+ 
+ include $(CLEAR_VARS)
+ 
+ LOCAL_CPP_EXTENSION := .cc
+-# TODO: may need to drag these in a shared variable when we start to
+-# support target builds.
+-LOCAL_SRC_FILES := \
+-    gtest.cc \
+-    gtest-death-test.cc \
+-    gtest-filepath.cc \
+-    src/gtest-internal-inl.h \
+-    gtest-port.cc \
+-    gtest-test-part.cc \
+-    gtest-typed-test.cc
+-
+-
+-LOCAL_C_INCLUDES := \
+-    $(LOCAL_PATH)/.. \
+-    $(LOCAL_PATH)/../include
+ 
++LOCAL_SRC_FILES := gtest-all.cc
+ 
+-LOCAL_CFLAGS += -DGTEST_OS_LINUX -DGTEST_HAS_STD_STRING -O0
++LOCAL_C_INCLUDES := $(libgtest_includes)
+ 
+-LOCAL_MODULE := libgtest
+-LOCAL_MODULE_TAGS := tests
++LOCAL_CFLAGS += -O0
++
++LOCAL_MODULE := libgtest_host
++LOCAL_MODULE_TAGS := eng
+ 
+ include $(BUILD_HOST_STATIC_LIBRARY)
+ 
+@@ -54,22 +71,52 @@ include $(BUILD_HOST_STATIC_LIBRARY)
+ include $(CLEAR_VARS)
+ 
+ LOCAL_CPP_EXTENSION := .cc
+-# TODO: may need to drag these in a shared variable when we start to
+-# support target builds.
+-LOCAL_SRC_FILES := \
+-    gtest_main.cc
+ 
+-LOCAL_C_INCLUDES := \
+-    $(LOCAL_PATH)/.. \
+-    $(LOCAL_PATH)/../include
++LOCAL_SRC_FILES := gtest_main.cc
++
++LOCAL_C_INCLUDES := $(libgtest_includes)
+ 
+-LOCAL_CFLAGS += -DGTEST_OS_LINUX -DGTEST_HAS_STD_STRING -O0
++LOCAL_CFLAGS += -O0
+ 
+ LOCAL_STATIC_LIBRARIES := libgtest
+ 
+-LOCAL_MODULE := libgtest_main
++LOCAL_MODULE := libgtest_main_host
+ LOCAL_MODULE_TAGS := eng
+ 
+ include $(BUILD_HOST_STATIC_LIBRARY)
+ 
+ endif # HOST_OS == linux
++
++#######################################################################
++# gtest lib target
++
++include $(CLEAR_VARS)
++
++LOCAL_CPP_EXTENSION := .cc
++
++LOCAL_SRC_FILES := gtest-all.cc
++
++LOCAL_C_INCLUDES := $(libgtest_includes)
++
++LOCAL_MODULE := libgtest
++LOCAL_MODULE_TAGS := eng
++
++include $(BUILD_STATIC_LIBRARY)
++
++#######################################################################
++# gtest_main lib target
++
++include $(CLEAR_VARS)
++
++LOCAL_CPP_EXTENSION := .cc
++
++LOCAL_SRC_FILES := gtest_main.cc
++
++LOCAL_C_INCLUDES := $(libgtest_includes)
++
++LOCAL_STATIC_LIBRARIES := libgtest
++
++LOCAL_MODULE := libgtest_main
++LOCAL_MODULE_TAGS := eng
++
++include $(BUILD_STATIC_LIBRARY)
+diff --git a/src/gtest-port.cc b/src/gtest-port.cc
+index e41ab9f..b4d2820 100644
+--- a/src/gtest-port.cc
++++ b/src/gtest-port.cc
+@@ -425,6 +425,10 @@ class CapturedStderr {
+     ::GetTempFileNameA(temp_dir_path, "gtest_redir", 0, temp_file_path);
+     const int captured_fd = creat(temp_file_path, _S_IREAD | _S_IWRITE);
+     filename_ = temp_file_path;
++#elif GTEST_OS_ANDROID
++    char name_template[] = "/sdcard/captured_stderr.XXXXXX";
++    const int captured_fd = mkstemp(name_template);
++    filename_ = name_template;
+ #else
+     // There's no guarantee that a test has write access to the
+     // current directory, so we create the temporary file in the /tmp
+diff --git a/test/Android.mk b/test/Android.mk
+index 3238f27..7de718e 100644
+--- a/test/Android.mk
++++ b/test/Android.mk
+@@ -14,57 +14,107 @@
+ #
+ #
+ 
+-ifeq ($(HOST_OS),linux)
++# Test for gtest. Run using 'runtest'.
++# The linux build and tests are run under valgrind by 'runtest'.
++
+ LOCAL_PATH := $(call my-dir)
++include $(CLEAR_VARS)
+ 
+ # TODO: Refactor these as 1st class build templates as suggested in
+-# review of the orginal import.
++# review of the original import.
++
++# Gtest depends on STLPort which does not build on host/simulator.
++
++ifeq ($(BUILD_WITH_ASTL),true)
++libgtest_test_includes := \
++    bionic/libstdc++/include \
++    external/astl/include \
++	$(LOCAL_PATH)/../include \
++	$(LOCAL_PATH)/..
++libgtest_test_static_lib := libgtest_main libgtest libastl
++libgtest_test_shared_lib :=
++libgtest_test_host_static_lib := libgtest_main_host libgtest_host libastl_host
++libgtest_test_host_shared_lib :=
++else
++# BUILD_WITH_ASTL could be undefined, force it to false (for the guard
++# before the test-target call).
++BUILD_WITH_ASTL := false
++libgtest_test_includes := \
++    bionic \
++    external/stlport/stlport \
++	$(LOCAL_PATH)/../include \
++	$(LOCAL_PATH)/..
++libgtest_test_static_lib := libgtest_main libgtest
++libgtest_test_shared_lib := libstlport
++libgtest_test_host_static_lib :=
++libgtest_test_host_shared_lib :=
++endif
+ 
++# $(2) and $(4) must be set or cleared in sync. $(2) is used to
++# generate the right make target (host vs device). $(4) is used in the
++# module's name and to have different module names for the host vs
++# device builds. Finally $(4) is used to pickup the right set of
++# libraries, typically the host libs have a _host suffix in their
++# names.
+ # $(1): source list
+ # $(2): "HOST_" or empty
+ # $(3): extra CFLAGS or empty
++# $(4): "_host" or empty
+ define _define-test
+ $(foreach file,$(1), \
+   $(eval include $(CLEAR_VARS)) \
+   $(eval LOCAL_CPP_EXTENSION := .cc) \
+   $(eval LOCAL_SRC_FILES := $(file)) \
+-  $(eval LOCAL_C_INCLUDES := $(LOCAL_PATH)/../include $(LOCAL_PATH)/..) \
+-  $(eval LOCAL_MODULE := $(notdir $(file:%.cc=%))) \
++  $(eval LOCAL_C_INCLUDES := $(libgtest_test_includes)) \
++  $(eval LOCAL_MODULE := $(notdir $(file:%.cc=%))$(4)) \
+   $(eval LOCAL_CFLAGS += $(3)) \
+-  $(eval LOCAL_STATIC_LIBRARIES := libgtest_main libgtest) \
++  $(eval LOCAL_STATIC_LIBRARIES := $(libgtest_test$(4)_static_lib)) \
++  $(eval LOCAL_SHARED_LIBRARIES := $(libgtest_test$(4)_shared_lib)) \
+   $(eval LOCAL_MODULE_TAGS := tests) \
++  $(eval LOCAL_MODULE_PATH := $(TARGET_OUT_DATA_APPS)) \
+   $(eval include $(BUILD_$(2)EXECUTABLE)) \
+ )
+ endef
+ 
++ifeq ($(HOST_OS)-$(BUILD_WITH_ASTL),linux-true)
+ define host-test
+-$(call _define-test,$(1),HOST_,-DGTEST_OS_LINUX -DGTEST_HAS_STD_STRING -O0)
++$(call _define-test,$(1),HOST_,-O0,_host)
+ endef
++endif
+ 
+-# TODO: Figure out the right CFLAGS combination needed for bionic/astl.
++
++# Cannot build simulator with STLport.
++ifneq ($(TARGET_SIMULATOR)-$(BUILD_WITH_ASTL),true-false)
+ define target-test
+ $(call _define-test,$(1))
+ endef
++endif
+ 
+-
+-# We use the single file option to build all the tests.
+ sources := \
++  gtest-death-test_test.cc \
+   gtest-filepath_test.cc \
+   gtest-linked_ptr_test.cc \
+   gtest-message_test.cc \
+   gtest-options_test.cc \
+   gtest-port_test.cc \
++  gtest_environment_test.cc \
++  gtest_no_test_unittest.cc \
+   gtest_pred_impl_unittest.cc \
++  gtest_repeat_test.cc \
+   gtest-test-part_test.cc \
+   gtest-typed-test_test.cc \
+   gtest-typed-test2_test.cc \
++  gtest_stress_test.cc \
+   gtest_unittest.cc \
+   gtest_prod_test.cc
+ 
++ifeq ($(HOST_OS)-$(BUILD_WITH_ASTL),linux-true)
+ $(call host-test, $(sources))
++endif
+ 
++# Cannot build simulator with STLport.
++ifneq ($(TARGET_SIMULATOR)-$(BUILD_WITH_ASTL),true-false)
++$(call target-test, $(sources))
++endif
+ 
+-# TODO: Target is not working yet.
+-# $(call target-test, $(sources))
+ 
+-endif # HOST_OS == linux
+diff --git a/test/gtest-filepath_test.cc b/test/gtest-filepath_test.cc
+index f8b68a7..5929aa3 100644
+--- a/test/gtest-filepath_test.cc
++++ b/test/gtest-filepath_test.cc
+@@ -472,6 +472,8 @@ class DirectoryCreationTest : public Test {
+       return String(temp_dir);
+     else
+       return String::Format("%s\\", temp_dir);
++#elif GTEST_OS_ANDROID
++    return String("/sdcard/");
+ #else
+     return String("/tmp/");
+ #endif
+diff --git a/test/gtest_unittest.cc b/test/gtest_unittest.cc
+index 9a731ee..88f7bda 100644
+--- a/test/gtest_unittest.cc
++++ b/test/gtest_unittest.cc
+@@ -183,11 +183,13 @@ TEST(GetTestTypeIdTest, ReturnsTheSameValueInsideOrOutsideOfGoogleTest) {
+ 
+ // Tests FormatTimeInMillisAsSeconds().
+ 
+-TEST(FormatTimeInMillisAsSecondsTest, FormatsZero) {
++// DISABLED see bug 2398288
++TEST(FormatTimeInMillisAsSecondsTest, DISABLED_FormatsZero) {
+   EXPECT_STREQ("0", FormatTimeInMillisAsSeconds(0));
+ }
+ 
+-TEST(FormatTimeInMillisAsSecondsTest, FormatsPositiveNumber) {
++// DISABLED see bug 2398288
++TEST(FormatTimeInMillisAsSecondsTest, DISABLED_FormatsPositiveNumber) {
+   EXPECT_STREQ("0.003", FormatTimeInMillisAsSeconds(3));
+   EXPECT_STREQ("0.01", FormatTimeInMillisAsSeconds(10));
+   EXPECT_STREQ("0.2", FormatTimeInMillisAsSeconds(200));
+@@ -195,7 +197,8 @@ TEST(FormatTimeInMillisAsSecondsTest, FormatsPositiveNumber) {
+   EXPECT_STREQ("3", FormatTimeInMillisAsSeconds(3000));
+ }
+ 
+-TEST(FormatTimeInMillisAsSecondsTest, FormatsNegativeNumber) {
++// DISABLED see bug 2398288
++TEST(FormatTimeInMillisAsSecondsTest, DISABLED_FormatsNegativeNumber) {
+   EXPECT_STREQ("-0.003", FormatTimeInMillisAsSeconds(-3));
+   EXPECT_STREQ("-0.01", FormatTimeInMillisAsSeconds(-10));
+   EXPECT_STREQ("-0.2", FormatTimeInMillisAsSeconds(-200));
+@@ -304,6 +307,7 @@ TEST(WideStringToUtf8Test, CanEncodeNul) {
+   EXPECT_STREQ("", WideStringToUtf8(L"", -1).c_str());
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests that ASCII strings are encoded correctly.
+ TEST(WideStringToUtf8Test, CanEncodeAscii) {
+   EXPECT_STREQ("a", WideStringToUtf8(L"a", 1).c_str());
+@@ -311,6 +315,7 @@ TEST(WideStringToUtf8Test, CanEncodeAscii) {
+   EXPECT_STREQ("a", WideStringToUtf8(L"a", -1).c_str());
+   EXPECT_STREQ("ab", WideStringToUtf8(L"ab", -1).c_str());
+ }
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ // Tests that Unicode code-points that have 8 to 11 bits are encoded
+ // as 110xxxxx 10xxxxxx.
+@@ -388,6 +393,7 @@ TEST(WideStringToUtf8Test, CanEncodeInvalidUtf16SurrogatePair) {
+ #endif  // !GTEST_WIDE_STRING_USES_UTF16_
+ 
+ // Tests that codepoint concatenation works correctly.
++#if GTEST_HAS_STD_WSTRING
+ #if !GTEST_WIDE_STRING_USES_UTF16_
+ TEST(WideStringToUtf8Test, ConcatenatesCodepointsCorrectly) {
+   EXPECT_STREQ(
+@@ -406,6 +412,7 @@ TEST(WideStringToUtf8Test, ConcatenatesCodepointsCorrectly) {
+       WideStringToUtf8(L"\xC74D\n\x576\x8D3", -1).c_str());
+ }
+ #endif  // !GTEST_WIDE_STRING_USES_UTF16_
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ // Tests the List template class.
+ 
+@@ -1920,6 +1927,7 @@ TEST(StringAssertionTest, ASSERT_STRCASENE) {
+                        "(ignoring case)");
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests *_STREQ on wide strings.
+ TEST(StringAssertionTest, STREQ_Wide) {
+   // NULL strings.
+@@ -1943,6 +1951,7 @@ TEST(StringAssertionTest, STREQ_Wide) {
+   EXPECT_NONFATAL_FAILURE(EXPECT_STREQ(L"abc\x8119", L"abc\x8120"),
+                           "abc");
+ }
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ // Tests *_STRNE on wide strings.
+ TEST(StringAssertionTest, STRNE_Wide) {
+@@ -1983,6 +1992,7 @@ TEST(IsSubstringTest, ReturnsCorrectResultForCString) {
+   EXPECT_TRUE(IsSubstring("", "", "needle", "two needles"));
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests that IsSubstring() returns the correct result when the input
+ // argument type is const wchar_t*.
+ TEST(IsSubstringTest, ReturnsCorrectResultForWideCString) {
+@@ -1993,6 +2003,7 @@ TEST(IsSubstringTest, ReturnsCorrectResultForWideCString) {
+   EXPECT_TRUE(IsSubstring("", "", static_cast<const wchar_t*>(NULL), NULL));
+   EXPECT_TRUE(IsSubstring("", "", L"needle", L"two needles"));
+ }
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ // Tests that IsSubstring() generates the correct message when the input
+ // argument type is const char*.
+@@ -2016,6 +2027,7 @@ TEST(IsSubstringTest, ReturnsCorrectResultsForStdString) {
+ 
+ #endif  // GTEST_HAS_STD_STRING
+ 
++
+ #if GTEST_HAS_STD_WSTRING
+ // Tests that IsSubstring returns the correct result when the input
+ // argument type is ::std::wstring.
+@@ -2047,6 +2059,7 @@ TEST(IsNotSubstringTest, ReturnsCorrectResultForCString) {
+   EXPECT_FALSE(IsNotSubstring("", "", "needle", "two needles"));
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests that IsNotSubstring() returns the correct result when the input
+ // argument type is const wchar_t*.
+ TEST(IsNotSubstringTest, ReturnsCorrectResultForWideCString) {
+@@ -2065,6 +2078,7 @@ TEST(IsNotSubstringTest, GeneratesCorrectMessageForWideCString) {
+                    "needle_expr", "haystack_expr",
+                    L"needle", L"two needles").failure_message());
+ }
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ #if GTEST_HAS_STD_STRING
+ 
+@@ -2293,8 +2307,9 @@ TEST_F(FloatTest, Commutative) {
+                           "1.0");
+ }
+ 
++// DISABLED see bug 2398288
+ // Tests EXPECT_NEAR.
+-TEST_F(FloatTest, EXPECT_NEAR) {
++TEST_F(FloatTest, DISABLED_EXPECT_NEAR) {
+   EXPECT_NEAR(-1.0f, -1.1f, 0.2f);
+   EXPECT_NEAR(2.0f, 3.0f, 1.0f);
+   EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(1.0f,1.2f, 0.1f),  // NOLINT
+@@ -2304,8 +2319,9 @@ TEST_F(FloatTest, EXPECT_NEAR) {
+   // space after the first comma in the previous line.
+ }
+ 
++// DISABLED see bug 2398288
+ // Tests ASSERT_NEAR.
+-TEST_F(FloatTest, ASSERT_NEAR) {
++TEST_F(FloatTest, DISABLED_ASSERT_NEAR) {
+   ASSERT_NEAR(-1.0f, -1.1f, 0.2f);
+   ASSERT_NEAR(2.0f, 3.0f, 1.0f);
+   EXPECT_FATAL_FAILURE(ASSERT_NEAR(1.0f,1.2f, 0.1f),  // NOLINT
+@@ -2446,8 +2462,9 @@ TEST_F(DoubleTest, Commutative) {
+   EXPECT_NONFATAL_FAILURE(EXPECT_DOUBLE_EQ(further_from_one_, 1.0), "1.0");
+ }
+ 
++// DISABLED see bug 2398288
+ // Tests EXPECT_NEAR.
+-TEST_F(DoubleTest, EXPECT_NEAR) {
++TEST_F(DoubleTest, DISABLED_EXPECT_NEAR) {
+   EXPECT_NEAR(-1.0, -1.1, 0.2);
+   EXPECT_NEAR(2.0, 3.0, 1.0);
+   EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(1.0, 1.2, 0.1),  // NOLINT
+@@ -2457,8 +2474,9 @@ TEST_F(DoubleTest, EXPECT_NEAR) {
+   // space after the first comma in the previous statement.
+ }
+ 
++// DISABLED see bug 2398288
+ // Tests ASSERT_NEAR.
+-TEST_F(DoubleTest, ASSERT_NEAR) {
++TEST_F(DoubleTest, DISABLED_ASSERT_NEAR) {
+   ASSERT_NEAR(-1.0, -1.1, 0.2);
+   ASSERT_NEAR(2.0, 3.0, 1.0);
+   EXPECT_FATAL_FAILURE(ASSERT_NEAR(1.0, 1.2, 0.1),  // NOLINT
+@@ -3787,6 +3805,7 @@ TEST(EqAssertionTest, Char) {
+                           "ch");
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests using wchar_t values in {EXPECT|ASSERT}_EQ.
+ TEST(EqAssertionTest, WideChar) {
+   EXPECT_EQ(L'b', L'b');
+@@ -3805,6 +3824,7 @@ TEST(EqAssertionTest, WideChar) {
+   EXPECT_FATAL_FAILURE(ASSERT_EQ(L'\x8120', wchar),
+                        "Value of: wchar");
+ }
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ #if GTEST_HAS_STD_STRING
+ // Tests using ::std::string values in {EXPECT|ASSERT}_EQ.
+@@ -4187,6 +4207,7 @@ TEST(MessageTest, NullPointers) {
+                msg.GetString().c_str());
+ }
+ 
++#if GTEST_HAS_STD_WSTRING
+ // Tests streaming wide strings to testing::Message.
+ TEST(MessageTest, WideStrings) {
+   // Streams a NULL of type const wchar_t*.
+@@ -4209,7 +4230,7 @@ TEST(MessageTest, WideStrings) {
+   EXPECT_STREQ("abc\xe8\x84\x99",
+                (Message() << wstr).GetString().c_str());
+ }
+-
++#endif  // GTEST_HAS_STD_WSTRING
+ 
+ // This line tests that we can define tests in the testing namespace.
+ namespace testing {

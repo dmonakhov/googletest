@@ -382,6 +382,9 @@
 #   define GTEST_HAS_RTTI 0
 #  endif
 
+// Android uses GCC but does not support RTTI
+# elif GTEST_OS_LINUX_ANDROID
+#  define GTEST_HAS_RTTI 0
 // Starting with version 4.3.2, gcc defines __GXX_RTTI iff RTTI is enabled.
 # elif defined(__GNUC__) && (GTEST_GCC_VER_ >= 40302)
 
@@ -458,7 +461,7 @@
 // Feature Pack download, which we cannot assume the user has.
 // QNX's QCC compiler is a modified GCC but it doesn't support TR1 tuple.
 # if (defined(__GNUC__) && !defined(__CUDACC__) && (GTEST_GCC_VER_ >= 40000) \
-      && !GTEST_OS_QNX) || _MSC_VER >= 1600
+      && !GTEST_OS_QNX) && !GTEST_OS_LINUX_ANDROID || _MSC_VER >= 1600
 #  define GTEST_USE_OWN_TR1_TUPLE 0
 # else
 #  define GTEST_USE_OWN_TR1_TUPLE 1
@@ -563,8 +566,11 @@
 
 // Typed tests need <typeinfo> and variadic macros, which GCC, VC++ 8.0,
 // Sun Pro CC, IBM Visual Age, and HP aCC support.
-#if defined(__GNUC__) || (_MSC_VER >= 1400) || defined(__SUNPRO_CC) || \
-    defined(__IBMCPP__) || defined(__HP_aCC)
+// TODO: We should be able to support these on Android but we don't
+// have cxxabi.h when building for the target but we have it for the host.
+#if ( defined(__GNUC__) || (_MSC_VER >= 1400) || defined(__SUNPRO_CC) || \
+     defined(__IBMCPP__) || defined(__HP_aCC) ) && \
+	!defined(GTEST_OS_LINUX_ANDROID)
 # define GTEST_HAS_TYPED_TEST 1
 # define GTEST_HAS_TYPED_TEST_P 1
 #endif
